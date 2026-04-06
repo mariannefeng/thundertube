@@ -2,6 +2,7 @@ function main() {
   // Configurables
 
   const websocketAddress = "ws://10.0.18.242";
+  var activeTab = "input-tab";
 
   const defaultText = "function draw(previousFrame, tick){\n    var vals = Array(300).fill(200);\n\n    // create a control signal ranging from 0 to 1, based on the tick\n    var speedFactor = (2 * 3.14159) * 0.0001;\n    var controlSignal = (Math.sin(speedFactor * tick) + 1) / 2.0;\n    // scale that signal to range from 0 to 99 (because we have 100 LEDs)\n    controlSignal = Math.floor(controlSignal * 100.0);\n    // set RGB for one pixel to white, based on where the control signal is\n    vals[controlSignal * 3] = 255;\n    vals[controlSignal * 3 + 1] = 255;\n    vals[controlSignal * 3 + 2] = 255;\n    return vals;\n}";
 
@@ -33,6 +34,7 @@ function main() {
   var lightObjectArray = [];
   var currentCode = defaultText;
   var codeChanged = false;
+  var inputRunning = true;
 
   var scene;
   var renderer;
@@ -58,6 +60,9 @@ function main() {
 
   function start() {
       let send = function(time) {
+          if (!inputRunning) {
+            return requestAnimationFrame(send);
+          }
 
         // This is throttling the amount of messages sent by websockets
         // This is because the raspberry pi network interface isn't fast enough
@@ -91,8 +96,12 @@ function main() {
               socket.send( byteArray.buffer );
 
           } catch(err) {
-              messageDiv.innerHTML = err;
-              messageDiv.classList.add("error");
+              if (activeTab === "ai-tab") {
+                aiStatus.innerHTML = '<span class="error">' + err + '</span>';
+              } else {
+                messageDiv.innerHTML = err;
+                messageDiv.classList.add("error");
+              }
           }
           requestAnimationFrame(send);
       }
@@ -249,6 +258,164 @@ function main() {
       messageDiv.innerHTML = err;
       messageDiv.classList.add("error");
     }
+  });
+
+
+  // --- Tab Switching ---
+
+  var tabs = document.querySelectorAll(".tab");
+  tabs.forEach(function(tab) {
+    tab.addEventListener("click", function() {
+      var targetId = tab.getAttribute("data-tab");
+      tabs.forEach(function(t) { t.classList.remove("active"); });
+      document.querySelectorAll(".tab-content").forEach(function(c) { c.classList.remove("active"); });
+      tab.classList.add("active");
+      document.getElementById(targetId).classList.add("active");
+      activeTab = targetId;
+
+      // When switching to input tab, resume with the editor's code
+      if (targetId === "input-tab") {
+        stopAiPreview();
+        currentCode = editor.getValue();
+        inputRunning = true;
+      }
+    });
+  });
+
+
+  // --- AI Tab ---
+
+  var aiPromptInput = document.getElementById("ai-prompt");
+  var aiGenerateBtn = document.getElementById("ai-generate-btn");
+  var globalStopBtn = document.getElementById("global-stop-btn");
+  var aiStatus = document.getElementById("ai-status");
+  var aiCodeDiv = document.getElementById("ai-code");
+  var aiSaveInput = document.getElementById("ai-save-input");
+  var aiSaveButton = document.getElementById("ai-save-button");
+  var aiCurrentCode = null;
+  var aiCanvas = document.getElementById("ai-canvas");
+  var aiCtx = aiCanvas.getContext("2d");
+  var aiPreviewTimer = null;
+
+  function drawAiPreview() {
+    aiCtx.fillStyle = "#111";
+    aiCtx.fillRect(0, 0, 1000, 40);
+    for (var i = 0; i < 100; i++) {
+      var r = ledArray[i * 3] || 0;
+      var g = ledArray[i * 3 + 1] || 0;
+      var b = ledArray[i * 3 + 2] || 0;
+      aiCtx.fillStyle = "rgb(" + r + "," + g + "," + b + ")";
+      aiCtx.beginPath();
+      aiCtx.arc(i * 10 + 5, 20, 4, 0, Math.PI * 2);
+      aiCtx.fill();
+    }
+  }
+
+  function startAiPreview() {
+    if (aiPreviewTimer) clearInterval(aiPreviewTimer);
+    aiPreviewTimer = setInterval(drawAiPreview, 100);
+  }
+
+  function stopAiPreview() {
+    if (aiPreviewTimer) clearInterval(aiPreviewTimer);
+    aiPreviewTimer = null;
+  }
+
+  function aiGenerate() {
+    var prompt = aiPromptInput.value.trim();
+    if (!prompt) return;
+    aiGenerateBtn.disabled = true;
+    aiStatus.textContent = "Asking AI to generate...";
+    aiCodeDiv.textContent = "";
+    aiCurrentCode = null;
+
+    fetch("/generate", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({prompt: prompt})
+    })
+    .then(function(res) { return res.json(); })
+    .then(function(data) {
+      if (data.error) throw new Error(data.error);
+
+      aiCurrentCode = data.code;
+      aiCodeDiv.textContent = data.code;
+
+      // Validate by eval-ing it, then run via the existing start() loop
+      try {
+        eval(data.code);
+        currentCode = data.code;
+        inputRunning = true;
+        startAiPreview();
+        aiStatus.textContent = "Running! Sending to LEDs...";
+      } catch (err) {
+        aiStatus.innerHTML = '<span class="error">Generated code has errors: ' + err.message + '</span>';
+      }
+
+      aiGenerateBtn.disabled = false;
+    })
+    .catch(function(e) {
+      aiStatus.innerHTML = '<span class="error">Error: ' + e.message + '</span>';
+      aiGenerateBtn.disabled = false;
+    });
+  }
+
+  aiSaveButton.addEventListener("click", function() {
+    var name = aiSaveInput.value.trim();
+    if (!aiCurrentCode) {
+      aiStatus.innerHTML = '<span class="error">Generate code first before saving.</span>';
+      return;
+    }
+    if (name.length < 4) {
+      aiStatus.innerHTML = '<span class="error">Give your pattern a good name (4+ chars).</span>';
+      return;
+    }
+    // Save to the same store as input tab
+    allCodes.push({name: name, value: aiCurrentCode});
+    var newCodes = JSON.stringify(allCodes);
+    fetch('/saveallcodes', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({savedCodes: newCodes})
+    }).catch(function(err) {
+      console.error('Error saving codes to server.');
+      console.error(err);
+    });
+
+    // Update input tab dropdown
+    var option = document.createElement("option");
+    option.text = name;
+    option.value = aiCurrentCode;
+    saveCodeDropdown.appendChild(option);
+
+    aiSaveInput.value = "";
+    aiStatus.textContent = "Saved '" + name + "'!";
+  });
+
+  function globalStop() {
+    // Stop both input and AI
+    inputRunning = false;
+
+    // Send a blank frame to turn off LEDs
+    var blank = new Uint8Array(300);
+    if (socket.readyState === WebSocket.OPEN) {
+      socket.send(blank.buffer);
+    }
+    ledArray = Array(300).fill(0);
+    stopAiPreview();
+    drawAiPreview();
+
+    if (activeTab === "ai-tab") {
+      aiStatus.textContent = "Stopped.";
+    } else {
+      messageDiv.innerHTML = "Stopped.";
+    }
+  }
+
+  aiGenerateBtn.addEventListener("click", aiGenerate);
+  globalStopBtn.addEventListener("click", globalStop);
+  aiPromptInput.addEventListener("keydown", function(e) {
+    if (e.key === "Enter") aiGenerate();
   });
 
 
