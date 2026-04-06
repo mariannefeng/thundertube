@@ -4,6 +4,8 @@ set -euo pipefail
 REPO="/home/pi/thundertube"
 cd "$REPO"
 
+[ -f ./env.local.sh ] && . ./env.local.sh
+
 /usr/bin/git pull --ff-only
 
 # run npm install in case we need to update anything
