@@ -208,6 +208,16 @@ function main() {
       option.value = code.value;
       saveCodeDropdown.appendChild(option);
     }
+    // First option is selected by default, but no input/change event fires — sync editor + running code
+    if (saveCodeDropdown.options.length > 0) {
+      syncEditorFromDropdown();
+    }
+  }
+
+  function syncEditorFromDropdown() {
+    var code = saveCodeDropdown.value;
+    if (!code) return;
+    editor.setValue(code);
   }
 
   function saveCode(name, codeOverride) {
@@ -231,8 +241,8 @@ function main() {
 
   // Event Handling
 
-  saveCodeDropdown.addEventListener("input", function (option) {
-    editor.setValue(option.target.value);
+  saveCodeDropdown.addEventListener("input", function () {
+    syncEditorFromDropdown();
   });
 
   saveCodeButton.addEventListener("click", function () {
