@@ -25,12 +25,15 @@ function draw(previousFrame, tick) {
   // Values 0-255.
 }
 
-Rules:
-  -- Use the tick parameter for time-based animation (called ~20 times/sec)
-  -- previousFrame can be used for effects that depend on prior state
-  -- Return an array of exactly 300 numbers
-  -- Make effects vivid and visually interesting
-  -- Return ONLY the function, nothing else`;
+CRITICAL rules:
+- The ENTIRE code is re-evaluated every frame (~20fps). Do NOT declare variables outside the function. ALL state must live inside the function body.
+- Use the tick parameter (Date.now() ms timestamp) for ALL time-based animation. Derive positions, colors, and phases from tick using Math.sin, modulo, etc.
+- Do NOT use Math.random() — it causes flashing. Use deterministic math based on tick and LED index.
+- Do NOT store state in outer scope variables or closures — they reset every frame.
+- previousFrame can be used to read the prior frame's LED values for smooth transitions.
+- Return an array of exactly 300 numbers, values 0-255.
+- Make effects vivid, smooth, and visually interesting.
+- Return ONLY the function, nothing else.`;
 
 function callGemini(userPrompt) {
   return new Promise((resolve, reject) => {
@@ -40,7 +43,7 @@ function callGemini(userPrompt) {
       generationConfig: { temperature: 0.7 },
     });
 
-    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`;
+    const url = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-lite:generateContent?key=${GEMINI_API_KEY}`;
     const parsed = new URL(url);
 
     const req = https.request(
