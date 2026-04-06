@@ -4,7 +4,7 @@ set -euo pipefail
 REPO="/home/pi/thundertube"
 cd "$REPO"
 
-[ -f ./env.local.sh ] && . ./env.local.sh
+[ -f ./.env.local.sh ] && . ./.env.local.sh
 
 /usr/bin/git pull --ff-only
 

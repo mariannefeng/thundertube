@@ -1,6 +1,6 @@
 cd /home/pi/thundertube
 
-[ -f ./env.local.sh ] && . ./env.local.sh
+[ -f ./.env.local.sh ] && . ./.env.local.sh
 
 # The aptitude repos didn't have a compatible node so we installed
 # node on this device with nvm, but something weird happens on launch
