@@ -28,7 +28,10 @@ ws.on("error", (e) => {
 
 function shutdown() {
   if (timer) clearInterval(timer);
-  ws.close();
+  if (ws.readyState === WebSocket.OPEN) {
+    ws.send(Buffer.alloc(300));
+    ws.close();
+  }
   process.exit(0);
 }
 process.on("SIGINT", shutdown);
